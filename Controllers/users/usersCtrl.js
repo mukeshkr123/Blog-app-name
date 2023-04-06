@@ -1,8 +1,10 @@
-const { json } = require("body-parser");
 const expressAsyncHandler = require("express-async-handler");
+const sgMail = require("@sendgrid/mail");
 const generateToken = require("../../config/token/generateToken");
 const User = require("../../model/user/User");
 const validateMongodbId = require("../../utils/validateMongoDbID.js");
+const crypto = require("crypto");
+sgMail.setApiKey(process.env.SEND_GRID_API_KEY);
 
 //-------------------------------------
 //Register
@@ -37,7 +39,7 @@ const loginUserCtrl = expressAsyncHandler(async (req, res) => {
   //Check if user Exist
   const userFound = await User.findOne({ email });
   // check if password matches
-  if (userFound && (await userFound.isPasswordMatch(password))) {
+  if (userFound && (await userFound.isPasswordMatched(password))) {
     res.json({
       _id: userFound._id,
       firstName: userFound.firstName,
@@ -266,6 +268,69 @@ const unblockUserCtrl = expressAsyncHandler(async (req, res) => {
   res.json(user);
 });
 
+//------------------------------
+// Generate Email verification token
+//------------------------------
+const generateVerificationTokenCtrl = expressAsyncHandler(async (req, res) => {
+  const loginUserId = req.user.id;
+
+  const user = await User.findById(loginUserId);
+
+  try {
+    //Generate token
+    const verificationToken = await user.createAccountVerificationToken();
+    //save the user
+    await user.save();
+    console.log(verificationToken);
+    //build your message
+
+    const resetURL = `If you were requested to verify your account, verify now within 10 minutes, otherwise ignore this message <a href="http://localhost:3000/verify-account/${verificationToken}">Click to verify your account</a>`;
+    const msg = {
+      to: "mukeshmehta2041@gmail.com",
+      from: "mkmehta2041@gmail.com",
+      subject: "My first Node js email sending",
+      html: resetURL,
+    };
+
+    await sgMail.send(msg);
+    res.json(resetURL);
+  } catch (error) {
+    res.json(error);
+  }
+});
+
+//------------------------------
+//Account verification
+//------------------------------
+
+const accountVerificationCtrl = expressAsyncHandler(async (req, res) => {
+  const { token } = req.body;
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+  //find this user by token
+
+  const userFound = await User.findOne({
+    accountVerificationToken: hashedToken,
+    accountVerificationTokenExpires: { $gt: new Date() },
+  });
+  if (!userFound) throw new Error("Token expired, try again later");
+  //update the proprt to true
+  userFound.isAccountVerified = true;
+  userFound.accountVerificationToken = undefined;
+  userFound.accountVerificationTokenExpires = undefined;
+  await userFound.save();
+  res.json(userFound);
+});
+
+//---------------------------------------------------------------
+//profile photo upload
+//---------------------------------------------------------------
+
+const profilePhotoUploadCtrl = expressAsyncHandler(async (req, res) => {
+  console.log(req.file);
+  res.json("upload");
+});
+
 module.exports = {
   userRegisterCtrl,
   loginUserCtrl,
@@ -279,6 +344,9 @@ module.exports = {
   unfollowUserCtrl,
   blockUserCtrl,
   unblockUserCtrl,
+  generateVerificationTokenCtrl,
+  accountVerificationCtrl,
+  profilePhotoUploadCtrl,
 };
 
 generateToken();

@@ -1,21 +1,21 @@
 const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
-
-// create schema
+const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+//create schema
 const userSchema = new mongoose.Schema(
   {
     firstName: {
-      type: String,
       required: [true, "First name is required"],
+      type: String,
     },
     lastName: {
-      type: String,
       required: [true, "Last name is required"],
+      type: String,
     },
     profilePhoto: {
       type: String,
       default:
-        "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460__480.png",
+        "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png",
     },
     email: {
       type: String,
@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
+      required: [true, "Hei buddy Password is required"],
     },
     postCount: {
       type: Number,
@@ -52,12 +52,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    isAccountVerified: {
-      type: Boolean,
-      default: false,
-    },
+    isAccountVerified: { type: Boolean, default: false },
     accountVerificationToken: String,
     accountVerificationTokenExpires: Date,
+
     viewedBy: {
       type: [
         {
@@ -83,10 +81,9 @@ const userSchema = new mongoose.Schema(
         },
       ],
     },
-
-    passwordChangedAt: Date,
-    passwordResetToken: String,
-    passwordResetTokenExpires: Date,
+    passwordChangeAt: Date,
+    passwordRessetToken: String,
+    passwordResetExpires: Date,
 
     active: {
       type: Boolean,
@@ -104,23 +101,35 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-//Hash Password
-
+//Hash password
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {
     next();
   }
-  const saltRounds = 10;
-  this.password = await bcrypt.hash(this.password, saltRounds);
+  //hash password
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-//compare password
-userSchema.methods.isPasswordMatch = async function (enteredpassword) {
-  return await bcrypt.compare(enteredpassword, this.password);
+//match password
+userSchema.methods.isPasswordMatched = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// compile schema into a model
+//Verify account
+userSchema.methods.createAccountVerificationToken = async function () {
+  //create a token
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  this.accountVerificationToken = crypto
+    .createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
+  this.accountVerificationTokenExpires = Date.now() + 30 * 60 * 1000; //10 minutes
+  return verificationToken;
+};
+
+//Compile schema into model
 const User = mongoose.model("User", userSchema);
 
 module.exports = User;
